@@ -164,6 +164,24 @@ label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--mute
 label .field{color:var(--text);width:100%}
 label.check{flex-direction:row;align-items:center;gap:10px;align-self:end;background:var(--surface2);border:1px solid var(--border);
   border-radius:12px;padding:9px 12px;cursor:pointer;color:var(--text);text-transform:none;letter-spacing:0;font-size:13px;font-weight:600;line-height:1.25}
+
+.seg{display:flex;background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:4px;gap:4px;align-self:end}
+.seg label{flex:1;display:block;text-align:center;cursor:pointer;text-transform:uppercase;letter-spacing:.06em;font-size:12px;font-weight:700;color:var(--muted)}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg span{display:block;padding:9px 10px;border-radius:9px;transition:.2s}
+.seg input:checked + span{background:var(--accent);color:#fff}
+.seg input:focus-visible + span{outline:2px solid #fff;outline-offset:1px}
+.chips{display:flex;gap:6px}
+.chip{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:0 14px;cursor:pointer;
+  font-size:13px;font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0;user-select:none;min-height:44px}
+.chip input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
+.chip:has(input:checked){border-color:var(--accent);color:var(--text)}
+.photo-row{display:flex;gap:8px}
+.photo-row .field{flex:1}
+.modal .row .prev{width:150px;aspect-ratio:63/88;flex-shrink:0;border-radius:10px;background:#101010;border:1px dashed var(--border);
+  display:grid;place-items:center;color:var(--muted);font-size:12px;text-align:center;overflow:hidden;padding:8px}
+.modal .row .prev img{width:100%;height:100%;object-fit:contain}
+.modal .row .prev:has(img){border:none;padding:0;background:none}
 label.check small{color:var(--muted);font-weight:400;font-size:11px}
 label.check input{width:18px;height:18px;accent-color:var(--accent);flex-shrink:0;cursor:pointer}
 
@@ -178,7 +196,7 @@ label.check input{width:18px;height:18px;accent-color:var(--accent);flex-shrink:
 .modal .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px}
 .modal .grid2 .full{grid-column:1/-1}
 .modal-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
-.pill{display:inline-block;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:3px 8px;font-size:12px;margin:2px 4px 2px 0}
+.pill{display:inline-block;white-space:nowrap;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:3px 8px;font-size:12px;margin:2px 4px 2px 0}
 .price-box{background:linear-gradient(135deg,rgba(255,255,255,.15),rgba(225,6,0,.1));border:1px solid rgba(255,255,255,.35);border-radius:12px;padding:12px;margin-top:10px;font-size:14px}
 .price-box b{font-size:20px;color:var(--accent3)}
 
@@ -265,11 +283,10 @@ label .field{font-family:var(--font-main);text-transform:none;letter-spacing:0;f
   <section class="panel active" id="tab-inventory">
     <div class="toolbar">
       <input class="field grow" id="fText" placeholder="Buscar en mi inventario…">
-      <select class="field" id="fType">
-        <option value="all">Raw y Graded</option>
-        <option value="raw">Solo Raw</option>
-        <option value="graded">Solo Graded</option>
-      </select>
+      <div class="chips">
+        <label class="chip"><input type="checkbox" id="fRaw" checked>Raw</label>
+        <label class="chip"><input type="checkbox" id="fGraded" checked>Graded</label>
+      </div>
       <select class="field" id="fStatus">
         <option value="all">Todas</option>
         <option value="stock">En stock</option>
@@ -323,7 +340,10 @@ label .field{font-family:var(--font-main);text-transform:none;letter-spacing:0;f
         <label class="full">Nombre de la carta *<input class="field" id="mName" required placeholder="Ej. Pikachu ex"></label>
         <label>Idioma<select class="field" id="mLang"></select></label>
         <label>Estado<select class="field" id="mCond"></select></label>
-        <label class="check"><input type="checkbox" id="mGraded"><span>Graded</span></label>
+<div class="seg" role="radiogroup" aria-label="Tipo">
+        <label><input type="radio" name="mType" id="mRaw" checked><span>Raw</span></label>
+        <label><input type="radio" name="mType" id="mGraded" ><span>Graded</span></label>
+      </div>
         <label id="mGradeWrap" hidden>Empresa y nota<input class="field" id="mGrade" placeholder="PSA 10, CGC 9.5, BGS 9…"></label>
         <label>Expansión<input class="field" id="mSet" placeholder="Ej. 151"></label>
         <label>Número<input class="field" id="mNum" placeholder="Ej. 025/165"></label>
@@ -402,12 +422,15 @@ function linkPricing(mk, buy, sell, chk){
 }
 const ALT_URL = 'https://alt.xyz/';
 const gradedFields = (p, graded, grade) => `
-      <label class="check"><input type="checkbox" id="${p}Graded" ${graded ? 'checked' : ''}><span>Graded</span></label>
+      <div class="seg" role="radiogroup" aria-label="Tipo">
+        <label><input type="radio" name="${p}Type" id="${p}Raw" ${graded ? '' : 'checked'}><span>Raw</span></label>
+        <label><input type="radio" name="${p}Type" id="${p}Graded" ${graded ? 'checked' : ''}><span>Graded</span></label>
+      </div>
       <label id="${p}GradeWrap" ${graded ? '' : 'hidden'}>Empresa y nota<input class="field" id="${p}Grade" placeholder="PSA 10, CGC 9.5, BGS 9…" value="${esc(grade || '')}"></label>`;
 function wireGraded(root, p){
-  const chk = root.querySelector('#' + p + 'Graded'), wrap = root.querySelector('#' + p + 'GradeWrap');
+  const chk = root.querySelector('#' + p + 'Graded'), raw = root.querySelector('#' + p + 'Raw'), wrap = root.querySelector('#' + p + 'GradeWrap');
   const upd = () => { wrap.hidden = !chk.checked; if (chk.checked) root.querySelector('#' + p + 'Grade').focus(); };
-  chk.addEventListener('change', upd);
+  chk.addEventListener('change', upd); raw.addEventListener('change', upd);
 }
 const priceFields = (p, market, buy, sell) => `
       <label>Valor de mercado (€)<input class="field" id="${p}Market" inputmode="decimal" placeholder="0,00" value="${market != null && market !== '' ? fmt(num(market)) : ''}"></label>
@@ -430,7 +453,26 @@ function openModal(html){
   ov.addEventListener('mousedown', e => { if (e.target === ov) closeModal(); });
   return ov.querySelector('.modal');
 }
-function closeModal(){ $('#modalRoot').innerHTML = ''; }
+let modalPhoto = null; // función que recibe una imagen pegada mientras hay una ventana abierta
+function closeModal(){ $('#modalRoot').innerHTML = ''; modalPhoto = null; }
+const photoFields = p => `
+      <div class="full"><label for="${p}Img">Foto de la carta</label>
+        <div class="photo-row" style="margin-top:6px">
+          <input class="field" id="${p}Img" placeholder="Pega el enlace de la imagen, o copia la imagen y pulsa Ctrl+V">
+          <button type="button" class="btn" id="${p}ImgBtn">Subir</button>
+          <input type="file" id="${p}ImgFile" accept="image/*" hidden>
+        </div>
+      </div>`;
+/* Conecta los controles de foto de una ventana. setImg(src) recibe la nueva imagen. */
+function wirePhoto(m, p, setImg){
+  const url = m.querySelector('#' + p + 'Img'), file = m.querySelector('#' + p + 'ImgFile');
+  const fromFile = async f => { if (!f || !f.type.startsWith('image/')) return; try { setImg(await resizeImage(f)); url.value = ''; toast('Foto añadida'); } catch(e) { toast('No se ha podido leer la imagen', true); } };
+  m.querySelector('#' + p + 'ImgBtn').onclick = () => file.click();
+  file.onchange = () => fromFile(file.files[0]);
+  url.addEventListener('input', () => { const u = url.value.trim(); if (/^https?:\/\//.test(u)) setImg(u); });
+  modalPhoto = fromFile;
+}
+function previewHTML(src){ return src ? `<img src="${esc(src)}" alt="">` : 'Sin foto<br>Añádela abajo'; }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
 function confirmBox(title, text, okLabel='Aceptar', danger=false){
@@ -525,7 +567,7 @@ function cardHTML(c){
       <div class="actions">
         <a class="icon-btn" style="flex:1.7" href="${cmLink(c)}" target="_blank" rel="noopener">Cardmarket</a>
         <a class="icon-btn" href="${ebayLink(c)}" target="_blank" rel="noopener">eBay</a>
-        ${c.graded ? `<a class="icon-btn alt" href="${ALT_URL}" target="_blank" rel="noopener" data-copy="${esc([c.name, c.number, c.grade].filter(Boolean).join(' '))}" title="Abre Alt y copia el nombre para buscarla">Alt</a>` : ''}
+        <a class="icon-btn alt" href="${ALT_URL}" target="_blank" rel="noopener" data-copy="${esc([c.name, c.number, c.graded ? c.grade : ''].filter(Boolean).join(' '))}" title="Abre Alt y copia el nombre para buscarla">Alt</a>
       </div>
     </div>
   </article>`;
@@ -533,12 +575,11 @@ function cardHTML(c){
 
 function renderInventory(){
   const q = $('#fText').value.trim().toLowerCase();
-  const ty = $('#fType').value;
   const st = $('#fStatus').value, lg = $('#fLang').value, so = $('#fSort').value;
   let list = cards.filter(c =>
     (st === 'all' || (st === 'sold' ? c.status === 'sold' : c.status !== 'sold')) &&
     (lg === 'all' || c.lang === lg) &&
-    (ty === 'all' || (ty === 'graded' ? !!c.graded : !c.graded)) &&
+    (c.graded ? $('#fGraded').checked : $('#fRaw').checked) &&
     (!q || [c.name, c.set, c.number, c.notes, c.grade, c.graded ? 'graded' : 'raw'].join(' ').toLowerCase().includes(q))
   );
   const sorters = {
@@ -550,13 +591,13 @@ function renderInventory(){
   $('#inv').innerHTML = list.map(cardHTML).join('');
   const e = $('#invEmpty');
   e.hidden = list.length > 0;
-  if (!list.length && cards.length) e.innerHTML = '<b>Sin resultados</b>Ninguna carta coincide con los filtros.';
+  if (!list.length && cards.length) e.innerHTML = (!$('#fRaw').checked && !$('#fGraded').checked) ? '<b>Marca Raw, Graded o las dos</b>Con las dos casillas desmarcadas no se muestra ninguna carta.' : '<b>Sin resultados</b>Ninguna carta coincide con los filtros.';
   else if (!cards.length) e.innerHTML = '<b>Aún no hay cartas por aquí</b>Ve a <i>Buscar cartas</i> o <i>Añadir a mano</i> para empezar tu colección.';
   renderStats();
 }
 function refresh(){ save(); renderInventory(); }
 
-['#fText','#fType','#fStatus','#fLang','#fSort'].forEach(s => $(s).addEventListener('input', renderInventory));
+['#fText','#fRaw','#fGraded','#fStatus','#fLang','#fSort'].forEach(s => $(s).addEventListener('input', renderInventory));
 $('#fLang').innerHTML += langOptions();
 
 $('#inv').addEventListener('click', async e => {
@@ -593,13 +634,18 @@ function editModal(c){
       <label>Expansión<input class="field" id="eSet" value="${esc(c.set)}"></label>
       <label>Número<input class="field" id="eNum" value="${esc(c.number)}"></label>
       ${priceFields('e', c.market, c.buy, c.sell)}
-      <label class="full">Enlace de la foto<input class="field" id="eImg" value="${/^https?:/.test(c.image || '') ? esc(c.image) : ''}" placeholder="${c.image ? 'Foto subida desde tu ordenador' : 'Pega aquí el enlace de una imagen'}"></label>
+      <div class="full" style="display:flex;gap:14px;align-items:center">
+        <div class="prev" id="ePrev" style="width:70px;aspect-ratio:63/88;border-radius:8px;background:#101010;overflow:hidden;display:grid;place-items:center;font-size:10px;color:var(--muted);text-align:center;flex-shrink:0">${c.image ? `<img src="${esc(c.image)}" alt="" style="width:100%;height:100%;object-fit:contain">` : 'Sin foto'}</div>
+        <div style="flex:1">${photoFields('e')}</div>
+      </div>
       ${c.status === 'sold' ? `<label class="full">Vendida por (€)<input class="field" id="eSold" inputmode="decimal" value="${c.soldPrice ?? ''}"></label>` : ''}
       <label class="full">Notas<textarea class="field" id="eNotes" rows="2">${esc(c.notes)}</textarea></label>
     </div>
     <div class="modal-actions"><button class="btn ghost" id="xNo">Cancelar</button><button class="btn primary" id="xOk">Guardar cambios</button></div>`);
   const v = id => m.querySelector(id).value;
   wireGraded(m, 'e');
+  let newImg = null;
+  wirePhoto(m, 'e', src => { newImg = src; m.querySelector('#ePrev').innerHTML = `<img src="${esc(src)}" alt="" style="width:100%;height:100%;object-fit:contain">`; });
   linkPricing(m.querySelector('#eMarket'), m.querySelector('#eBuy'), m.querySelector('#eSell'), m.querySelector('#eChk'));
   m.querySelector('#xNo').onclick = closeModal;
   m.querySelector('#xOk').onclick = () => {
@@ -607,7 +653,7 @@ function editModal(c){
     Object.assign(c, { name:v('#eName').trim(), lang:v('#eLang'), condition:v('#eCond'), set:v('#eSet').trim(),
       number:v('#eNum').trim(), buy:num(v('#eBuy')), sell:num(v('#eSell')), market:num(v('#eMarket')) || null, notes:v('#eNotes').trim(),
       graded: m.querySelector('#eGraded').checked, grade: m.querySelector('#eGraded').checked ? v('#eGrade').trim() : '' });
-    if (/^https?:\/\//.test(v('#eImg').trim())) c.image = v('#eImg').trim();
+    if (newImg) c.image = newImg;
     if (c.status === 'sold') c.soldPrice = num(v('#eSold'));
     closeModal(); refresh(); toast('Cambios guardados');
   };
@@ -770,7 +816,7 @@ async function addFromSearch(d){
   const preview = { name:d.name, set:setName, cmUrl:d.cmUrl };
   m.innerHTML = `<h2>Añadir al inventario</h2><p class="sub">Revisa los datos y pon tus precios.</p>
     <div class="row">
-      ${d.image ? `<img src="${d.image}/high.webp" alt="">` : ''}
+      <div class="prev" id="aPrev">${previewHTML(d.image ? d.image + '/high.webp' : '')}</div>
       <div>
         <h3 style="font-size:20px;margin-bottom:8px">${esc(d.name)}</h3>
         <span class="pill">${LANGS[d.lang].name}</span>
@@ -780,10 +826,10 @@ async function addFromSearch(d){
         <div class="price-box">${market != null
           ? `Precio Cardmarket (tendencia)<br><b>${eur(market)}</b>`
           : 'Sin precio en la base de datos.<br>Consúltalo en Cardmarket 👇'}
-          <div style="margin-top:8px;display:flex;gap:6px">
+          <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
             <a class="pill" href="${cmLink(preview)}" target="_blank" rel="noopener">Ver en Cardmarket ↗</a>
             <a class="pill" href="${ebayLink(preview)}" target="_blank" rel="noopener">Ver en eBay ↗</a>
-            <a class="pill" href="${ALT_URL}" target="_blank" rel="noopener" data-copy="${esc(d.name + ' ' + (number || ''))}">Alt (graded) ↗</a>
+            <a class="pill" href="${ALT_URL}" target="_blank" rel="noopener" data-copy="${esc(d.name + ' ' + (number || ''))}">Ver en Alt ↗</a>
           </div>
         </div>
       </div>
@@ -793,6 +839,7 @@ async function addFromSearch(d){
       <label>Estado<select class="field" id="aCond">${condOptions('Near Mint')}</select></label>
       ${gradedFields('a')}
       <label>Idioma<select class="field" id="aLang">${langOptions(d.cardLang || d.lang)}</select></label>
+      ${photoFields('a')}
       <label class="full">Notas<textarea class="field" id="aNotes" rows="2"></textarea></label>
     </div>
     <div class="modal-actions"><button class="btn ghost" id="xNo">Cancelar</button><button class="btn primary" id="xOk">Añadir al inventario</button></div>`;
@@ -800,11 +847,13 @@ async function addFromSearch(d){
   m.querySelector('#aMarket').dispatchEvent(new Event('input'));
   m.querySelector(market != null ? '#aBuy' : '#aMarket').focus();
   wireGraded(m, 'a');
+  let chosenImg = d.image ? d.image + '/high.webp' : '';
+  wirePhoto(m, 'a', src => { chosenImg = src; m.querySelector('#aPrev').innerHTML = previewHTML(src); });
   m.querySelector('#xNo').onclick = closeModal;
   m.querySelector('#xOk').onclick = () => {
     const v = id => m.querySelector(id).value;
     cards.push({ id:uid(), added:Date.now(), status:'stock', name:d.name, lang:v('#aLang'), set:setName, number,
-      condition:v('#aCond'), image: d.image ? d.image + '/high.webp' : '', market: num(v('#aMarket')) || market, cmUrl: d.cmUrl || '',
+      condition:v('#aCond'), image: chosenImg, market: num(v('#aMarket')) || market, cmUrl: d.cmUrl || '',
       graded: m.querySelector('#aGraded').checked, grade: m.querySelector('#aGraded').checked ? v('#aGrade').trim() : '',
       buy:num(v('#aBuy')), sell:num(v('#aSell')), notes:v('#aNotes').trim() });
     closeModal(); refresh(); toast(`${d.name} añadida al inventario ✨`);
@@ -833,14 +882,15 @@ function showPhoto(src){ drop.querySelector('img')?.remove(); if (!src) return; 
 $('#mImgUrl').addEventListener('input', () => { const u = $('#mImgUrl').value.trim(); if (/^https?:\/\//.test(u)) { manualImg = u; showPhoto(u); } });
 /* Pegar una imagen copiada (Ctrl+V) mientras estás en "Añadir a mano" */
 document.addEventListener('paste', e => {
-  if (!$('#tab-manual').classList.contains('active')) return;
   const item = [...(e.clipboardData?.items || [])].find(it => it.type.startsWith('image/'));
-  if (item) { e.preventDefault(); setPhoto(item.getAsFile()); }
+  if (!item) return;
+  if (modalPhoto) { e.preventDefault(); return modalPhoto(item.getAsFile()); }
+  if ($('#tab-manual').classList.contains('active')) { e.preventDefault(); setPhoto(item.getAsFile()); }
 });
 drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
 drop.ondragleave = () => drop.classList.remove('over');
 drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); setPhoto(e.dataTransfer.files[0]); };
-function resetManual(){ $('#manualForm').reset(); $('#mChk').checked = true; manualImg = ''; manualCmUrl = ''; drop.querySelector('img')?.remove(); $('#mPhoto').value = ''; $('#mGradeWrap').hidden = true; }
+function resetManual(){ $('#manualForm').reset(); $('#mChk').checked = true; manualImg = ''; manualCmUrl = ''; drop.querySelector('img')?.remove(); $('#mPhoto').value = ''; $('#mGradeWrap').hidden = true; $('#mRaw').checked = true; }
 
 $('#mReset').onclick = resetManual;
 function addManual(){
