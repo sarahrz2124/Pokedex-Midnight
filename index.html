@@ -152,6 +152,10 @@ select option{background:var(--surface)}
 .fields .full{grid-column:1/-1}
 label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)}
 label .field{color:var(--text);width:100%}
+label.check{flex-direction:row;align-items:center;gap:10px;align-self:end;background:var(--surface2);border:1px solid var(--border);
+  border-radius:12px;padding:9px 12px;cursor:pointer;color:var(--text);text-transform:none;letter-spacing:0;font-size:13px;font-weight:600;line-height:1.25}
+label.check small{color:var(--muted);font-weight:400;font-size:11px}
+label.check input{width:18px;height:18px;accent-color:var(--accent);flex-shrink:0;cursor:pointer}
 
 /* Ventanas emergentes */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(6px);display:grid;place-items:center;z-index:50;padding:20px;animation:fade .2s}
@@ -296,7 +300,7 @@ label .field{font-family:var(--font-main);text-transform:none;letter-spacing:0;f
     <form class="form" id="manualForm">
       <div>
         <div class="drop" id="drop">
-          <div>📷<br><br>Pulsa o arrastra aquí<br>la foto de la carta</div>
+          <div>📷<br><br>Pulsa, arrastra o pega (Ctrl+V)<br>aquí la foto de la carta</div>
         </div>
         <input type="file" id="mPhoto" accept="image/*" hidden>
       </div>
@@ -306,8 +310,11 @@ label .field{font-family:var(--font-main);text-transform:none;letter-spacing:0;f
         <label>Estado<select class="field" id="mCond"></select></label>
         <label>Expansión<input class="field" id="mSet" placeholder="Ej. 151"></label>
         <label>Número<input class="field" id="mNum" placeholder="Ej. 025/165"></label>
-        <label>Precio de compra (€)<input class="field" id="mBuy" inputmode="decimal" placeholder="0,00"></label>
-        <label>Precio de venta (€) · +35 %<input class="field" id="mSell" inputmode="decimal" placeholder="0,00"></label>
+        <label>Valor de mercado (€)<input class="field" id="mMarket" inputmode="decimal" placeholder="0,00"></label>
+        <label>Precio de compra (€) · 75 %<input class="field" id="mBuy" inputmode="decimal" placeholder="0,00"></label>
+        <label>Precio de venta (€)<input class="field" id="mSell" inputmode="decimal" placeholder="0,00"></label>
+        <label class="check"><input type="checkbox" id="mChk" checked><span>Añadir margen<br><small>+35 % · venta al 110 % del mercado</small></span></label>
+        <label class="full">Enlace de la foto (opcional)<input class="field" id="mImgUrl" placeholder="En Cardmarket: clic derecho en la foto → Copiar dirección de imagen"></label>
         <label class="full">Notas<textarea class="field" id="mNotes" rows="2" placeholder="A quién se la compré, dónde la tengo guardada…"></textarea></label>
         <div class="full" style="display:flex;justify-content:flex-end;gap:10px">
           <button type="button" class="btn ghost" id="mReset">Limpiar</button>
@@ -329,7 +336,8 @@ const LANGS = {
   fr:{name:'Francés',code:'FR'}, de:{name:'Alemán',code:'DE'}, it:{name:'Italiano',code:'IT'},
   pt:{name:'Portugués',code:'PT'}, ko:{name:'Coreano',code:'KR'}, 'zh-tw':{name:'Chino (trad.)',code:'ZH'}
 };
-const MARGIN = 0.35; // 💶 Margen: el precio de venta = compra + 35 %
+const BUY_RATE  = 0.75; // 💶 Compro al 75 % del valor de mercado
+const SELL_RATE = 1.10; // 💶 Vendo al 110 % del valor de mercado (+35 puntos sobre la compra)
 const CONDITIONS = ['Mint','Near Mint','Excellent','Good','Light Played','Played','Poor'];
 const ICON = {
   edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>',
@@ -359,14 +367,27 @@ const condOptions = sel => CONDITIONS.map(c => `<option ${c===sel?'selected':''}
 const cmLink = c => c.cmUrl || `https://www.cardmarket.com/es/Pokemon/Products/Search?searchString=${encodeURIComponent(c.name)}`;
 const ebayLink = c => `https://www.ebay.es/sch/i.html?_nkw=${encodeURIComponent(c.name + ' ' + (c.set||'') + ' pokemon')}`;
 
-function withMargin(buy){ return Math.round(num(buy) * (1 + MARGIN) * 100) / 100; }
-/* Rellena la venta automáticamente al escribir la compra (puedes cambiarla después) */
-function linkMarkup(buyEl, sellEl){
-  buyEl.addEventListener('input', () => {
-    const b = num(buyEl.value);
-    sellEl.value = b ? withMargin(b).toFixed(2).replace('.', ',') : '';
-  });
+const fmt = n => n ? (Math.round(n * 100) / 100).toFixed(2).replace('.', ',') : '';
+/* Calcula compra y venta a partir del valor de mercado.
+   Con la casilla marcada: compra = mercado × 0,75 y venta = mercado × 1,10.
+   Si solo escribes la compra, el mercado se deduce (compra ÷ 0,75).
+   Con la casilla desmarcada, la venta es igual a la compra (sin margen). */
+function linkPricing(mk, buy, sell, chk){
+  const update = () => {
+    const b = num(buy.value);
+    const m = num(mk.value) || (b ? b / BUY_RATE : 0);
+    sell.value = chk.checked ? fmt(m * SELL_RATE) : fmt(b);
+  };
+  mk.addEventListener('input', () => { const m = num(mk.value); buy.value = m ? fmt(m * BUY_RATE) : ''; update(); });
+  buy.addEventListener('input', update);
+  chk.addEventListener('change', update);
+  return update;
 }
+const priceFields = (p, market, buy, sell) => `
+      <label>Valor de mercado (€)<input class="field" id="${p}Market" inputmode="decimal" placeholder="0,00" value="${market != null && market !== '' ? fmt(num(market)) : ''}"></label>
+      <label>Precio compra (€) · 75 %<input class="field" id="${p}Buy" inputmode="decimal" placeholder="0,00" value="${buy ? fmt(num(buy)) : ''}"></label>
+      <label>Precio venta (€)<input class="field" id="${p}Sell" inputmode="decimal" placeholder="0,00" value="${sell ? fmt(num(sell)) : ''}"></label>
+      <label class="check"><input type="checkbox" id="${p}Chk" checked><span>Añadir margen<br><small>+35 % · venta al 110 % del mercado</small></span></label>`;
 
 function toast(msg, error=false){
   const t = document.createElement('div');
@@ -534,19 +555,20 @@ function editModal(c){
       <label>Estado<select class="field" id="eCond">${condOptions(c.condition)}</select></label>
       <label>Expansión<input class="field" id="eSet" value="${esc(c.set)}"></label>
       <label>Número<input class="field" id="eNum" value="${esc(c.number)}"></label>
-      <label>Precio compra (€)<input class="field" id="eBuy" inputmode="decimal" value="${c.buy ?? ''}"></label>
-      <label>Precio venta (€) · +35 %<input class="field" id="eSell" inputmode="decimal" value="${c.sell ?? ''}"></label>
+      ${priceFields('e', c.market, c.buy, c.sell)}
+      <label class="full">Enlace de la foto<input class="field" id="eImg" value="${/^https?:/.test(c.image || '') ? esc(c.image) : ''}" placeholder="${c.image ? 'Foto subida desde tu ordenador' : 'Pega aquí el enlace de una imagen'}"></label>
       ${c.status === 'sold' ? `<label class="full">Vendida por (€)<input class="field" id="eSold" inputmode="decimal" value="${c.soldPrice ?? ''}"></label>` : ''}
       <label class="full">Notas<textarea class="field" id="eNotes" rows="2">${esc(c.notes)}</textarea></label>
     </div>
     <div class="modal-actions"><button class="btn ghost" id="xNo">Cancelar</button><button class="btn primary" id="xOk">Guardar cambios</button></div>`);
   const v = id => m.querySelector(id).value;
-  linkMarkup(m.querySelector('#eBuy'), m.querySelector('#eSell'));
+  linkPricing(m.querySelector('#eMarket'), m.querySelector('#eBuy'), m.querySelector('#eSell'), m.querySelector('#eChk'));
   m.querySelector('#xNo').onclick = closeModal;
   m.querySelector('#xOk').onclick = () => {
     if (!v('#eName').trim()) return toast('El nombre no puede estar vacío', true);
     Object.assign(c, { name:v('#eName').trim(), lang:v('#eLang'), condition:v('#eCond'), set:v('#eSet').trim(),
-      number:v('#eNum').trim(), buy:num(v('#eBuy')), sell:num(v('#eSell')), notes:v('#eNotes').trim() });
+      number:v('#eNum').trim(), buy:num(v('#eBuy')), sell:num(v('#eSell')), market:num(v('#eMarket')) || null, notes:v('#eNotes').trim() });
+    if (/^https?:\/\//.test(v('#eImg').trim())) c.image = v('#eImg').trim();
     if (c.status === 'sold') c.soldPrice = num(v('#eSold'));
     closeModal(); refresh(); toast('Cambios guardados');
   };
@@ -656,7 +678,19 @@ async function addFromCardmarket(){
   $('#sQuery').value = info.num != null ? `${info.name} ${info.num}` : info.name;
   await doSearch({
     query: $('#sQuery').value, lang: 'en', cardLang: lang, cmUrl: info.url,
-    onEmpty: () => {
+    onEmpty: async () => {
+      /* Sin coincidencia exacta: probamos solo con el nombre para recuperar la foto */
+      if (info.num != null && !info._retry) {
+        const alt = await fetchCards('en', info.name, null).catch(() => []);
+        if (alt.length) {
+          info._retry = true;
+          lastResults = alt.slice(0, 60).map(d => ({...d, lang:'en', cmUrl:info.url, cardLang:lang}));
+          $('#sQuery').value = info.name;
+          await doSearch({ query: info.name, lang:'en', cardLang: lang, cmUrl: info.url });
+          toast('No he encontrado ese número exacto: elige la carta con la misma ilustración y pulsa “+ Añadir”.');
+          return;
+        }
+      }
       /* No está en la base de datos: rellenamos el formulario manual */
       document.querySelector('.tab[data-tab="manual"]').click();
       resetManual(); $('#mName').value = info.name; $('#mSet').value = info.set;
@@ -667,6 +701,7 @@ async function addFromCardmarket(){
       toast('No la he encontrado en la base de datos: te he rellenado el formulario para añadirla a mano.');
     }
   });
+  if (lastResults.length === 1) return addFromSearch(lastResults[0]);
   if (lastResults.length) toast('Elige la carta correcta y pulsa “+ Añadir”. Quedará enlazada a esa ficha de Cardmarket.');
 }
 $('#cmBtn').onclick = addFromCardmarket;
@@ -714,20 +749,20 @@ async function addFromSearch(d){
       </div>
     </div>
     <div class="grid2">
-      <label>Precio compra (€)<input class="field" id="aBuy" inputmode="decimal" placeholder="0,00"></label>
-      <label>Precio venta (€) · +35 %<input class="field" id="aSell" inputmode="decimal" placeholder="0,00"></label>
+      ${priceFields('a', market)}
       <label>Estado<select class="field" id="aCond">${condOptions('Near Mint')}</select></label>
       <label>Idioma<select class="field" id="aLang">${langOptions(d.cardLang || d.lang)}</select></label>
       <label class="full">Notas<textarea class="field" id="aNotes" rows="2"></textarea></label>
     </div>
     <div class="modal-actions"><button class="btn ghost" id="xNo">Cancelar</button><button class="btn primary" id="xOk">Añadir al inventario</button></div>`;
-  m.querySelector('#aBuy').focus();
-  linkMarkup(m.querySelector('#aBuy'), m.querySelector('#aSell'));
+  linkPricing(m.querySelector('#aMarket'), m.querySelector('#aBuy'), m.querySelector('#aSell'), m.querySelector('#aChk'));
+  m.querySelector('#aMarket').dispatchEvent(new Event('input'));
+  m.querySelector(market != null ? '#aBuy' : '#aMarket').focus();
   m.querySelector('#xNo').onclick = closeModal;
   m.querySelector('#xOk').onclick = () => {
     const v = id => m.querySelector(id).value;
     cards.push({ id:uid(), added:Date.now(), status:'stock', name:d.name, lang:v('#aLang'), set:setName, number,
-      condition:v('#aCond'), image: d.image ? d.image + '/low.webp' : '', market, cmUrl: d.cmUrl || '',
+      condition:v('#aCond'), image: d.image ? d.image + '/high.webp' : '', market: num(v('#aMarket')) || market, cmUrl: d.cmUrl || '',
       buy:num(v('#aBuy')), sell:num(v('#aSell')), notes:v('#aNotes').trim() });
     closeModal(); refresh(); toast(`${d.name} añadida al inventario ✨`);
   };
@@ -738,7 +773,7 @@ $('#mLang').innerHTML = langOptions('es');
 $('#mCond').innerHTML = condOptions('Near Mint');
 let manualImg = '';
 let manualCmUrl = '';
-linkMarkup($('#mBuy'), $('#mSell'));
+linkPricing($('#mMarket'), $('#mBuy'), $('#mSell'), $('#mChk'));
 const drop = $('#drop');
 drop.onclick = () => $('#mPhoto').click();
 async function setPhoto(file){
@@ -750,17 +785,25 @@ async function setPhoto(file){
   } catch(e) { toast('No se ha podido leer la imagen', true); }
 }
 $('#mPhoto').onchange = e => setPhoto(e.target.files[0]);
+function showPhoto(src){ drop.querySelector('img')?.remove(); if (!src) return; const i = document.createElement('img'); i.src = src; i.onerror = () => { i.remove(); toast('No se ha podido cargar esa imagen. Prueba a copiar la imagen y pegarla con Ctrl+V.', true); }; drop.appendChild(i); }
+$('#mImgUrl').addEventListener('input', () => { const u = $('#mImgUrl').value.trim(); if (/^https?:\/\//.test(u)) { manualImg = u; showPhoto(u); } });
+/* Pegar una imagen copiada (Ctrl+V) mientras estás en "Añadir a mano" */
+document.addEventListener('paste', e => {
+  if (!$('#tab-manual').classList.contains('active')) return;
+  const item = [...(e.clipboardData?.items || [])].find(it => it.type.startsWith('image/'));
+  if (item) { e.preventDefault(); setPhoto(item.getAsFile()); }
+});
 drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
 drop.ondragleave = () => drop.classList.remove('over');
 drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); setPhoto(e.dataTransfer.files[0]); };
-function resetManual(){ $('#manualForm').reset(); manualImg = ''; manualCmUrl = ''; drop.querySelector('img')?.remove(); $('#mPhoto').value = ''; }
+function resetManual(){ $('#manualForm').reset(); $('#mChk').checked = true; manualImg = ''; manualCmUrl = ''; drop.querySelector('img')?.remove(); $('#mPhoto').value = ''; }
 
 $('#mReset').onclick = resetManual;
 function addManual(){
   const name = $('#mName').value.trim();
   if (!name) { $('#mName').focus(); return toast('Escribe al menos el nombre de la carta', true); }
   cards.push({ id:uid(), added:Date.now(), status:'stock', name, lang:$('#mLang').value, set:$('#mSet').value.trim(),
-    number:$('#mNum').value.trim(), condition:$('#mCond').value, image:manualImg, market:null, cmUrl:manualCmUrl,
+    number:$('#mNum').value.trim(), condition:$('#mCond').value, image:manualImg, market:num($('#mMarket').value) || null, cmUrl:manualCmUrl,
     buy:num($('#mBuy').value), sell:num($('#mSell').value), notes:$('#mNotes').value.trim() });
   refresh();
   resetManual();
