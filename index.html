@@ -50,7 +50,15 @@ header{display:flex;align-items:center;justify-content:space-between;gap:16px;fl
 .brand h1{font-size:28px;font-weight:800;letter-spacing:-.5px;
   color:var(--text)}
 .brand p{color:var(--muted);font-size:14px}
-.head-actions{display:flex;gap:10px}
+.head-actions{display:flex;gap:10px;flex-wrap:wrap}
+#btnSync .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0}
+#btnSync[data-state="ok"] .dot{background:#fff;box-shadow:0 0 0 3px rgba(255,255,255,.15)}
+#btnSync[data-state="busy"] .dot{background:#fff;animation:blink 1s ease-in-out infinite}
+#btnSync[data-state="error"]{border-color:var(--accent)}
+#btnSync[data-state="error"] .dot{background:var(--accent)}
+@keyframes blink{50%{opacity:.25}}
+.steps{margin:0 0 18px 20px;display:grid;gap:8px;font-size:14px;line-height:1.45}
+.steps a{color:#fff;text-decoration:underline;text-decoration-color:var(--accent);text-underline-offset:3px;font-weight:600}
 
 /* Botones */
 .btn{border:1px solid var(--border);background:var(--surface);padding:10px 16px;border-radius:12px;cursor:pointer;
@@ -256,6 +264,7 @@ label .field{font-family:var(--font-main);text-transform:none;letter-spacing:0;f
       </div>
     </div>
     <div class="head-actions">
+      <button class="btn" id="btnSync" data-state="off" title="Sincronizar tus cartas entre dispositivos"><span class="dot"></span><span id="syncText">Sincronizar</span></button>
       <button class="btn" id="btnExport" title="Descargar copia de seguridad">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Exportar
       </button>
@@ -382,15 +391,28 @@ const ICON = {
 };
 
 /* ===== Datos ===== */
+const DEL_KEY = 'midnightcollect-deleted';
 let cards = [];
+let deleted = {}; // cartas borradas (id → fecha), para que el borrado llegue a todos los dispositivos
 let canSave = true;
 try { localStorage.setItem('__t', '1'); localStorage.removeItem('__t'); } catch(e) { canSave = false; }
-try { if (canSave) cards = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch(e) { cards = []; }
-function save(){
+try { if (canSave) { cards = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; deleted = JSON.parse(localStorage.getItem(DEL_KEY)) || {}; } } catch(e) { cards = []; deleted = {}; }
+const stamp = c => c.updated || c.added || 0;
+const strip = c => { const { updated, ...rest } = c; return JSON.stringify(rest); };
+let snap = new Map(cards.map(c => [c.id, strip(c)]));
+/* Marca con fecha las cartas que han cambiado y apunta las borradas */
+function track(){
+  const now = Date.now(), ids = new Set();
+  for (const c of cards) { ids.add(c.id); if (snap.get(c.id) !== strip(c)) c.updated = now; }
+  for (const id of snap.keys()) if (!ids.has(id)) deleted[id] = now;
+  snap = new Map(cards.map(c => [c.id, strip(c)]));
+}
+function persist(){
   if (!canSave) return;
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(cards)); }
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(cards)); localStorage.setItem(DEL_KEY, JSON.stringify(deleted)); }
   catch(e){ toast('No se ha podido guardar: el espacio está lleno. Exporta una copia y borra fotos grandes.', true); }
 }
+function save(){ track(); persist(); scheduleSync(); }
 
 /* ===== Utilidades ===== */
 const $ = s => document.querySelector(s);
@@ -420,7 +442,15 @@ function linkPricing(mk, buy, sell, chk){
   chk.addEventListener('change', update);
   return update;
 }
-const ALT_URL = 'https://alt.xyz/';
+/* Alt: busca por nombre + número y, si es graded, filtra por empresa y nota (p. ej. PSA 10 → gradeKey=PSA-10) */
+function altLink(c){
+  const params = new URLSearchParams();
+  const num = String(c.number || '').split('/')[0].replace(/^0+(?=\d)/, '');
+  params.set('query', [c.name, num].filter(Boolean).join(' '));
+  const m = c.graded && String(c.grade || '').trim().match(/^([A-Za-z]+)\s*-?\s*(\d+(?:[.,]\d)?)/);
+  if (m) params.set('gradeKey', `${m[1].toUpperCase()}-${m[2].replace(',', '.')}`);
+  return 'https://alt.xyz/browse?' + params.toString().replace(/\+/g, '%20');
+}
 const gradedFields = (p, graded, grade) => `
       <div class="seg" role="radiogroup" aria-label="Tipo">
         <label><input type="radio" name="${p}Type" id="${p}Raw" ${graded ? '' : 'checked'}><span>Raw</span></label>
@@ -567,7 +597,7 @@ function cardHTML(c){
       <div class="actions">
         <a class="icon-btn" style="flex:1.7" href="${cmLink(c)}" target="_blank" rel="noopener">Cardmarket</a>
         <a class="icon-btn" href="${ebayLink(c)}" target="_blank" rel="noopener">eBay</a>
-        <a class="icon-btn alt" href="${ALT_URL}" target="_blank" rel="noopener" data-copy="${esc([c.name, c.number, c.graded ? c.grade : ''].filter(Boolean).join(' '))}" title="Abre Alt y copia el nombre para buscarla">Alt</a>
+        <a class="icon-btn alt" href="${esc(altLink(c))}" target="_blank" rel="noopener" title="Ver ofertas de esta carta en Alt">Alt</a>
       </div>
     </div>
   </article>`;
@@ -829,7 +859,7 @@ async function addFromSearch(d){
           <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
             <a class="pill" href="${cmLink(preview)}" target="_blank" rel="noopener">Ver en Cardmarket ↗</a>
             <a class="pill" href="${ebayLink(preview)}" target="_blank" rel="noopener">Ver en eBay ↗</a>
-            <a class="pill" href="${ALT_URL}" target="_blank" rel="noopener" data-copy="${esc(d.name + ' ' + (number || ''))}">Ver en Alt ↗</a>
+            <a class="pill" href="${esc(altLink({ name:d.name, number }))}" target="_blank" rel="noopener">Ver en Alt ↗</a>
           </div>
         </div>
       </div>
@@ -933,7 +963,136 @@ $('#importFile').onchange = e => {
   r.readAsText(f);
 };
 
+/* ===== Sincronización entre dispositivos (GitHub Gist privado) ===== */
+const SYNC_KEY = 'midnightcollect-sync';
+const GIST_FILE = 'midnightcollect-inventario.json';
+let syncCfg = null;
+try { syncCfg = JSON.parse(localStorage.getItem(SYNC_KEY)); } catch(e) {}
+let syncTimer = null, syncing = false, syncAgain = false;
+
+function setSyncState(state, text){ $('#btnSync').dataset.state = state; $('#syncText').textContent = text; }
+async function gh(path, opts = {}){
+  const headers = { 'Accept':'application/vnd.github+json', 'Authorization':'Bearer ' + syncCfg.token };
+  if (opts.body) headers['Content-Type'] = 'application/json';
+  const r = await fetch('https://api.github.com' + path, { ...opts, headers, cache:'no-store' });
+  if (r.status === 401 || r.status === 403) throw new Error('auth');
+  if (!r.ok) throw new Error('http ' + r.status);
+  return r.status === 204 ? null : r.json();
+}
+async function findOrCreateGist(){
+  for (let page = 1; page <= 5; page++) {
+    const list = await gh(`/gists?per_page=100&page=${page}`);
+    const g = list.find(g => g.files && g.files[GIST_FILE]);
+    if (g) return g.id;
+    if (list.length < 100) break;
+  }
+  const g = await gh('/gists', { method:'POST', body: JSON.stringify({
+    description:'MidnightCollect · inventario de cartas (no borrar)', public:false,
+    files: { [GIST_FILE]: { content: JSON.stringify({ version:1, cards:[], deleted:{} }) } } }) });
+  return g.id;
+}
+async function pullRemote(){
+  const g = await gh('/gists/' + syncCfg.gistId);
+  const f = g.files && g.files[GIST_FILE];
+  if (!f) return { cards:[], deleted:{} };
+  let txt = f.content;
+  if (f.truncated) txt = await (await fetch(f.raw_url, { cache:'no-store' })).text();
+  try { const d = JSON.parse(txt); return { cards: Array.isArray(d.cards) ? d.cards : [], deleted: d.deleted || {} }; }
+  catch(e) { return { cards:[], deleted:{} }; }
+}
+/* Junta lo de este dispositivo con lo guardado en GitHub: gana siempre el cambio más reciente */
+function mergeData(remote){
+  const del = { ...remote.deleted };
+  for (const [id, t] of Object.entries(deleted)) del[id] = Math.max(del[id] || 0, t);
+  const map = new Map();
+  for (const c of [...remote.cards, ...cards]) { const prev = map.get(c.id); if (!prev || stamp(c) >= stamp(prev)) map.set(c.id, c); }
+  return { cards: [...map.values()].filter(c => !(del[c.id] && del[c.id] >= stamp(c))), deleted: del };
+}
+async function syncNow(){
+  if (!syncCfg || !canSave) return;
+  if (syncing) { syncAgain = true; return; }
+  syncing = true; clearTimeout(syncTimer);
+  setSyncState('busy', 'Sincronizando…');
+  try {
+    if (!syncCfg.gistId) { syncCfg.gistId = await findOrCreateGist(); localStorage.setItem(SYNC_KEY, JSON.stringify(syncCfg)); }
+    track();
+    const remote = await pullRemote();
+    const merged = mergeData(remote);
+    const changedHere = JSON.stringify(merged.cards) !== JSON.stringify(cards);
+    cards = merged.cards; deleted = merged.deleted;
+    snap = new Map(cards.map(c => [c.id, strip(c)]));
+    persist();
+    if (changedHere) renderInventory();
+    if (JSON.stringify(merged) !== JSON.stringify(remote)) {
+      await gh('/gists/' + syncCfg.gistId, { method:'PATCH', body: JSON.stringify({ files: { [GIST_FILE]: {
+        content: JSON.stringify({ version:1, app:'MidnightCollect', savedAt: Date.now(), cards: merged.cards, deleted: merged.deleted }) } } }) });
+    }
+    setSyncState('ok', 'Sincronizado ' + new Date().toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit' }));
+  } catch(e) {
+    if (e.message === 'auth') { setSyncState('error', 'Revisa la clave'); toast('GitHub ha rechazado la clave. Pulsa el botón de sincronizar y conecta con una clave nueva.', true); }
+    else setSyncState('error', 'Sin conexión · reintentando');
+  } finally {
+    syncing = false;
+    if (syncAgain) { syncAgain = false; syncNow(); }
+  }
+}
+function scheduleSync(){
+  if (!syncCfg || !canSave) return;
+  setSyncState('busy', 'Guardando…');
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(syncNow, 1500);
+}
+
+function syncModal(){
+  const on = !!syncCfg;
+  const m = openModal(`<h2>Sincronizar dispositivos</h2>
+    <p class="sub">${on
+      ? 'Este dispositivo está conectado a tu GitHub. Tus cartas se guardan solas y aparecen en todos los dispositivos que conectes con la misma clave.'
+      : 'Guarda tus cartas en tu cuenta de GitHub para verlas en el móvil, la tablet o cualquier ordenador. Solo hay que hacerlo una vez en cada dispositivo.'}</p>
+    ${on ? '' : `<ol class="steps">
+      <li>Abre <a href="https://github.com/settings/tokens/new?scopes=gist&description=MidnightCollect" target="_blank" rel="noopener">este enlace de GitHub</a>. Ya viene preparado.</li>
+      <li>En <b>Expiration</b> elige <b>No expiration</b>.</li>
+      <li>Baja del todo y pulsa el botón verde <b>Generate token</b>.</li>
+      <li>Copia la clave que empieza por <b>ghp_</b> y pégala aquí. Guárdala en tus notas: la necesitarás para conectar tus otros dispositivos.</li>
+    </ol>
+    <div class="grid2"><label class="full">Clave de GitHub<input class="field" id="tok" placeholder="ghp_…" autocomplete="off" spellcheck="false"></label></div>`}
+    <div class="modal-actions">${on
+      ? `<button class="btn danger" id="sOff">Desconectar este dispositivo</button><button class="btn ghost" id="xNo">Cerrar</button><button class="btn primary" id="sNow">Sincronizar ahora</button>`
+      : `<button class="btn ghost" id="xNo">Cancelar</button><button class="btn primary" id="sOn">Conectar</button>`}</div>`);
+  m.querySelector('#xNo').onclick = closeModal;
+  if (on) {
+    m.querySelector('#sNow').onclick = () => { closeModal(); syncNow(); };
+    m.querySelector('#sOff').onclick = async () => {
+      if (!await confirmBox('¿Desconectar este dispositivo?', 'Tus cartas se quedan aquí y en GitHub, pero los cambios que hagas en este dispositivo dejarán de sincronizarse.', 'Desconectar', true)) return;
+      syncCfg = null; localStorage.removeItem(SYNC_KEY); setSyncState('off', 'Sincronizar');
+      toast('Dispositivo desconectado');
+    };
+  } else {
+    const btn = m.querySelector('#sOn');
+    btn.onclick = async () => {
+      const t = m.querySelector('#tok').value.trim();
+      if (!/^(ghp_|github_pat_)\w+/.test(t)) return toast('Esa clave no parece de GitHub: tiene que empezar por ghp_', true);
+      syncCfg = { token: t };
+      btn.disabled = true; btn.textContent = 'Conectando…';
+      try {
+        syncCfg.gistId = await findOrCreateGist();
+        localStorage.setItem(SYNC_KEY, JSON.stringify(syncCfg));
+        closeModal();
+        await syncNow();
+        toast('¡Sincronización activada! Haz lo mismo en tus otros dispositivos con la misma clave.');
+      } catch(e) {
+        syncCfg = null; btn.disabled = false; btn.textContent = 'Conectar';
+        toast(e.message === 'auth' ? 'GitHub ha rechazado la clave. Cópiala de nuevo, entera.' : 'No se ha podido conectar con GitHub. Revisa tu conexión e inténtalo otra vez.', true);
+      }
+    };
+  }
+}
+$('#btnSync').onclick = syncModal;
+document.addEventListener('visibilitychange', () => { if (!document.hidden) syncNow(); });
+setInterval(() => { if (!document.hidden) syncNow(); }, 60000);
+
 renderInventory();
+if (syncCfg && canSave) syncNow();
 if (!canSave) {
   const w = document.createElement('div');
   w.style.cssText = 'background:var(--accent);color:#fff;padding:12px 20px;text-align:center;font-weight:600;font-size:14px';
