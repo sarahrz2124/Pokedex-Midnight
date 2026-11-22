@@ -71,6 +71,13 @@ header{display:flex;align-items:center;justify-content:space-between;gap:16px;fl
 .stat::before{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:var(--c,var(--accent))}
 .stat span{color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:1px}
 .stat b{display:block;font-size:30px;font-weight:700;margin-top:6px;letter-spacing:-.5px}
+
+.stat-sub{display:block;margin-top:6px;color:var(--muted);font-size:12px}
+.stat-sub strong{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
+.profit{display:flex;justify-content:space-between;align-items:center;border:1px solid rgba(225,6,0,.35);background:rgba(225,6,0,.08);
+  border-radius:10px;padding:7px 10px;font-size:12px;color:var(--muted)}
+.profit b{color:var(--text);font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
+.profit.neg b{color:var(--danger)}
 .stat b.neg{color:var(--danger)} .stat b.pos{color:var(--ok)}
 
 /* Pestañas */
@@ -111,6 +118,9 @@ select option{background:var(--surface)}
 .badge{position:absolute;top:10px;padding:4px 9px;border-radius:8px;font-size:11px;font-weight:700;letter-spacing:.5px;backdrop-filter:blur(8px)}
 .badge.lang{left:10px;background:rgba(10,10,10,.75);border:1px solid var(--border)}
 .badge.status{right:10px;background:#fff;color:#0a0a0a}
+.badge.grade{top:auto;bottom:10px;left:10px;background:var(--accent);color:#fff}
+.icon-btn.alt{border-color:rgba(225,6,0,.5)}
+a.icon-btn{padding:0 4px;white-space:nowrap;font-size:10.5px;letter-spacing:0}
 .badge.status.sold{background:var(--accent);color:#fff}
 
 .info{padding:14px 16px 16px;display:flex;flex-direction:column;gap:10px;flex:1}
@@ -242,7 +252,7 @@ label .field{font-family:var(--font-main);text-transform:none;letter-spacing:0;f
     <div class="stat" style="--c:#ffffff"><span>En stock</span><b id="sStock">0</b></div>
     <div class="stat" style="--c:var(--accent)"><span>Vendidas</span><b id="sSold">0</b></div>
     <div class="stat" style="--c:#555"><span>Valor del stock</span><b id="sValue">0 €</b></div>
-    <div class="stat" style="--c:var(--accent)"><span>Ganancia</span><b id="sProfit">0 €</b></div>
+    <div class="stat" style="--c:var(--accent)"><span>Ganancia</span><b id="sProfit">0 €</b><small class="stat-sub">Prevista en stock: <strong id="sProfitNext">0 €</strong></small></div>
   </section>
 
   <nav class="tabs">
@@ -255,6 +265,11 @@ label .field{font-family:var(--font-main);text-transform:none;letter-spacing:0;f
   <section class="panel active" id="tab-inventory">
     <div class="toolbar">
       <input class="field grow" id="fText" placeholder="Buscar en mi inventario…">
+      <select class="field" id="fType">
+        <option value="all">Raw y Graded</option>
+        <option value="raw">Solo Raw</option>
+        <option value="graded">Solo Graded</option>
+      </select>
       <select class="field" id="fStatus">
         <option value="all">Todas</option>
         <option value="stock">En stock</option>
@@ -308,12 +323,14 @@ label .field{font-family:var(--font-main);text-transform:none;letter-spacing:0;f
         <label class="full">Nombre de la carta *<input class="field" id="mName" required placeholder="Ej. Pikachu ex"></label>
         <label>Idioma<select class="field" id="mLang"></select></label>
         <label>Estado<select class="field" id="mCond"></select></label>
+        <label class="check"><input type="checkbox" id="mGraded"><span>Graded</span></label>
+        <label id="mGradeWrap" hidden>Empresa y nota<input class="field" id="mGrade" placeholder="PSA 10, CGC 9.5, BGS 9…"></label>
         <label>Expansión<input class="field" id="mSet" placeholder="Ej. 151"></label>
         <label>Número<input class="field" id="mNum" placeholder="Ej. 025/165"></label>
         <label>Valor de mercado (€)<input class="field" id="mMarket" inputmode="decimal" placeholder="0,00"></label>
         <label>Precio de compra (€) · 75 %<input class="field" id="mBuy" inputmode="decimal" placeholder="0,00"></label>
         <label>Precio de venta (€)<input class="field" id="mSell" inputmode="decimal" placeholder="0,00"></label>
-        <label class="check"><input type="checkbox" id="mChk" checked><span>Añadir margen<br><small>+35 % · venta al 110 % del mercado</small></span></label>
+        <label class="check"><input type="checkbox" id="mChk" checked><span>35 %</span></label>
         <label class="full">Enlace de la foto (opcional)<input class="field" id="mImgUrl" placeholder="En Cardmarket: clic derecho en la foto → Copiar dirección de imagen"></label>
         <label class="full">Notas<textarea class="field" id="mNotes" rows="2" placeholder="A quién se la compré, dónde la tengo guardada…"></textarea></label>
         <div class="full" style="display:flex;justify-content:flex-end;gap:10px">
@@ -383,11 +400,20 @@ function linkPricing(mk, buy, sell, chk){
   chk.addEventListener('change', update);
   return update;
 }
+const ALT_URL = 'https://alt.xyz/';
+const gradedFields = (p, graded, grade) => `
+      <label class="check"><input type="checkbox" id="${p}Graded" ${graded ? 'checked' : ''}><span>Graded</span></label>
+      <label id="${p}GradeWrap" ${graded ? '' : 'hidden'}>Empresa y nota<input class="field" id="${p}Grade" placeholder="PSA 10, CGC 9.5, BGS 9…" value="${esc(grade || '')}"></label>`;
+function wireGraded(root, p){
+  const chk = root.querySelector('#' + p + 'Graded'), wrap = root.querySelector('#' + p + 'GradeWrap');
+  const upd = () => { wrap.hidden = !chk.checked; if (chk.checked) root.querySelector('#' + p + 'Grade').focus(); };
+  chk.addEventListener('change', upd);
+}
 const priceFields = (p, market, buy, sell) => `
       <label>Valor de mercado (€)<input class="field" id="${p}Market" inputmode="decimal" placeholder="0,00" value="${market != null && market !== '' ? fmt(num(market)) : ''}"></label>
       <label>Precio compra (€) · 75 %<input class="field" id="${p}Buy" inputmode="decimal" placeholder="0,00" value="${buy ? fmt(num(buy)) : ''}"></label>
       <label>Precio venta (€)<input class="field" id="${p}Sell" inputmode="decimal" placeholder="0,00" value="${sell ? fmt(num(sell)) : ''}"></label>
-      <label class="check"><input type="checkbox" id="${p}Chk" checked><span>Añadir margen<br><small>+35 % · venta al 110 % del mercado</small></span></label>`;
+      <label class="check"><input type="checkbox" id="${p}Chk" checked><span>35 %</span></label>`;
 
 function toast(msg, error=false){
   const t = document.createElement('div');
@@ -439,6 +465,9 @@ function resizeImage(file, max=500){
 document.addEventListener('click', e => {
   const a = e.target.closest('a[target="_blank"]'); if (!a) return;
   e.preventDefault();
+  if (a.dataset.copy) {
+    navigator.clipboard?.writeText(a.dataset.copy).then(() => toast(`Copiado “${a.dataset.copy}”: pégalo en el buscador de Alt`)).catch(() => {});
+  }
   let w = null;
   try { w = window.open(a.href, '_blank', 'noopener'); } catch(err) {}
   if (!w) {
@@ -463,6 +492,7 @@ function renderStats(){
   $('#sSold').textContent = sold.length;
   $('#sValue').textContent = eur(stock.reduce((a,c) => a + num(c.sell), 0));
   const p = $('#sProfit'); p.textContent = eur(profit);
+  $('#sProfitNext').textContent = eur(stock.reduce((a,c) => a + (num(c.sell) - num(c.buy)), 0));
   p.className = profit > 0 ? 'pos' : profit < 0 ? 'neg' : '';
 }
 
@@ -475,6 +505,7 @@ function cardHTML(c){
     <div class="holo">${img}
       <span class="badge lang">${langCode(c.lang)}</span>
       <span class="badge status ${sold?'sold':''}">${sold?'VENDIDA':'EN STOCK'}</span>
+      ${c.graded ? `<span class="badge grade">${esc(c.grade || 'GRADED')}</span>` : ''}
     </div>
     <div class="info">
       <div><h3>${esc(c.name)}</h3>${meta?`<p class="meta">${meta}</p>`:''}</div>
@@ -482,7 +513,9 @@ function cardHTML(c){
         <div><span>Compra</span><b>${eur(c.buy)}</b></div>
         <div><span>${sold?'Vendida':'Venta'}</span><b>${eur(sold ? (c.soldPrice ?? c.sell) : c.sell)}</b></div>
       </div>
-      ${c.market ? `<p class="market">Media Cardmarket: ${eur(c.market)}</p>` : ''}
+      ${(() => { const g = num(sold ? (c.soldPrice ?? c.sell) : c.sell) - num(c.buy);
+         return `<div class="profit ${g < 0 ? 'neg' : ''}"><span>${sold ? 'Ganancia' : 'Ganancia prevista'}</span><b>${g >= 0 ? '+' : ''}${eur(g)}</b></div>`; })()}
+      ${c.market ? `<p class="market">Valor de mercado: ${eur(c.market)}</p>` : ''}
       <div class="actions">
         ${sold ? `<button class="icon-btn restock" data-a="restock">↺ A stock</button>`
                : `<button class="icon-btn sell" data-a="sell">✓ Vendida</button>`}
@@ -490,8 +523,9 @@ function cardHTML(c){
         <button class="icon-btn del" data-a="del" title="Borrar">${ICON.trash}</button>
       </div>
       <div class="actions">
-        <a class="icon-btn" href="${cmLink(c)}" target="_blank" rel="noopener">Cardmarket</a>
+        <a class="icon-btn" style="flex:1.7" href="${cmLink(c)}" target="_blank" rel="noopener">Cardmarket</a>
         <a class="icon-btn" href="${ebayLink(c)}" target="_blank" rel="noopener">eBay</a>
+        ${c.graded ? `<a class="icon-btn alt" href="${ALT_URL}" target="_blank" rel="noopener" data-copy="${esc([c.name, c.number, c.grade].filter(Boolean).join(' '))}" title="Abre Alt y copia el nombre para buscarla">Alt</a>` : ''}
       </div>
     </div>
   </article>`;
@@ -499,11 +533,13 @@ function cardHTML(c){
 
 function renderInventory(){
   const q = $('#fText').value.trim().toLowerCase();
+  const ty = $('#fType').value;
   const st = $('#fStatus').value, lg = $('#fLang').value, so = $('#fSort').value;
   let list = cards.filter(c =>
     (st === 'all' || (st === 'sold' ? c.status === 'sold' : c.status !== 'sold')) &&
     (lg === 'all' || c.lang === lg) &&
-    (!q || [c.name, c.set, c.number, c.notes].join(' ').toLowerCase().includes(q))
+    (ty === 'all' || (ty === 'graded' ? !!c.graded : !c.graded)) &&
+    (!q || [c.name, c.set, c.number, c.notes, c.grade, c.graded ? 'graded' : 'raw'].join(' ').toLowerCase().includes(q))
   );
   const sorters = {
     new:(a,b) => b.added - a.added, old:(a,b) => a.added - b.added,
@@ -520,7 +556,7 @@ function renderInventory(){
 }
 function refresh(){ save(); renderInventory(); }
 
-['#fText','#fStatus','#fLang','#fSort'].forEach(s => $(s).addEventListener('input', renderInventory));
+['#fText','#fType','#fStatus','#fLang','#fSort'].forEach(s => $(s).addEventListener('input', renderInventory));
 $('#fLang').innerHTML += langOptions();
 
 $('#inv').addEventListener('click', async e => {
@@ -553,6 +589,7 @@ function editModal(c){
       <label class="full">Nombre<input class="field" id="eName" value="${esc(c.name)}"></label>
       <label>Idioma<select class="field" id="eLang">${langOptions(c.lang)}</select></label>
       <label>Estado<select class="field" id="eCond">${condOptions(c.condition)}</select></label>
+      ${gradedFields('e', c.graded, c.grade)}
       <label>Expansión<input class="field" id="eSet" value="${esc(c.set)}"></label>
       <label>Número<input class="field" id="eNum" value="${esc(c.number)}"></label>
       ${priceFields('e', c.market, c.buy, c.sell)}
@@ -562,12 +599,14 @@ function editModal(c){
     </div>
     <div class="modal-actions"><button class="btn ghost" id="xNo">Cancelar</button><button class="btn primary" id="xOk">Guardar cambios</button></div>`);
   const v = id => m.querySelector(id).value;
+  wireGraded(m, 'e');
   linkPricing(m.querySelector('#eMarket'), m.querySelector('#eBuy'), m.querySelector('#eSell'), m.querySelector('#eChk'));
   m.querySelector('#xNo').onclick = closeModal;
   m.querySelector('#xOk').onclick = () => {
     if (!v('#eName').trim()) return toast('El nombre no puede estar vacío', true);
     Object.assign(c, { name:v('#eName').trim(), lang:v('#eLang'), condition:v('#eCond'), set:v('#eSet').trim(),
-      number:v('#eNum').trim(), buy:num(v('#eBuy')), sell:num(v('#eSell')), market:num(v('#eMarket')) || null, notes:v('#eNotes').trim() });
+      number:v('#eNum').trim(), buy:num(v('#eBuy')), sell:num(v('#eSell')), market:num(v('#eMarket')) || null, notes:v('#eNotes').trim(),
+      graded: m.querySelector('#eGraded').checked, grade: m.querySelector('#eGraded').checked ? v('#eGrade').trim() : '' });
     if (/^https?:\/\//.test(v('#eImg').trim())) c.image = v('#eImg').trim();
     if (c.status === 'sold') c.soldPrice = num(v('#eSold'));
     closeModal(); refresh(); toast('Cambios guardados');
@@ -744,6 +783,7 @@ async function addFromSearch(d){
           <div style="margin-top:8px;display:flex;gap:6px">
             <a class="pill" href="${cmLink(preview)}" target="_blank" rel="noopener">Ver en Cardmarket ↗</a>
             <a class="pill" href="${ebayLink(preview)}" target="_blank" rel="noopener">Ver en eBay ↗</a>
+            <a class="pill" href="${ALT_URL}" target="_blank" rel="noopener" data-copy="${esc(d.name + ' ' + (number || ''))}">Alt (graded) ↗</a>
           </div>
         </div>
       </div>
@@ -751,6 +791,7 @@ async function addFromSearch(d){
     <div class="grid2">
       ${priceFields('a', market)}
       <label>Estado<select class="field" id="aCond">${condOptions('Near Mint')}</select></label>
+      ${gradedFields('a')}
       <label>Idioma<select class="field" id="aLang">${langOptions(d.cardLang || d.lang)}</select></label>
       <label class="full">Notas<textarea class="field" id="aNotes" rows="2"></textarea></label>
     </div>
@@ -758,11 +799,13 @@ async function addFromSearch(d){
   linkPricing(m.querySelector('#aMarket'), m.querySelector('#aBuy'), m.querySelector('#aSell'), m.querySelector('#aChk'));
   m.querySelector('#aMarket').dispatchEvent(new Event('input'));
   m.querySelector(market != null ? '#aBuy' : '#aMarket').focus();
+  wireGraded(m, 'a');
   m.querySelector('#xNo').onclick = closeModal;
   m.querySelector('#xOk').onclick = () => {
     const v = id => m.querySelector(id).value;
     cards.push({ id:uid(), added:Date.now(), status:'stock', name:d.name, lang:v('#aLang'), set:setName, number,
       condition:v('#aCond'), image: d.image ? d.image + '/high.webp' : '', market: num(v('#aMarket')) || market, cmUrl: d.cmUrl || '',
+      graded: m.querySelector('#aGraded').checked, grade: m.querySelector('#aGraded').checked ? v('#aGrade').trim() : '',
       buy:num(v('#aBuy')), sell:num(v('#aSell')), notes:v('#aNotes').trim() });
     closeModal(); refresh(); toast(`${d.name} añadida al inventario ✨`);
   };
@@ -771,6 +814,7 @@ async function addFromSearch(d){
 /* ===== Añadir a mano ===== */
 $('#mLang').innerHTML = langOptions('es');
 $('#mCond').innerHTML = condOptions('Near Mint');
+wireGraded(document, 'm');
 let manualImg = '';
 let manualCmUrl = '';
 linkPricing($('#mMarket'), $('#mBuy'), $('#mSell'), $('#mChk'));
@@ -796,7 +840,7 @@ document.addEventListener('paste', e => {
 drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
 drop.ondragleave = () => drop.classList.remove('over');
 drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); setPhoto(e.dataTransfer.files[0]); };
-function resetManual(){ $('#manualForm').reset(); $('#mChk').checked = true; manualImg = ''; manualCmUrl = ''; drop.querySelector('img')?.remove(); $('#mPhoto').value = ''; }
+function resetManual(){ $('#manualForm').reset(); $('#mChk').checked = true; manualImg = ''; manualCmUrl = ''; drop.querySelector('img')?.remove(); $('#mPhoto').value = ''; $('#mGradeWrap').hidden = true; }
 
 $('#mReset').onclick = resetManual;
 function addManual(){
@@ -804,7 +848,8 @@ function addManual(){
   if (!name) { $('#mName').focus(); return toast('Escribe al menos el nombre de la carta', true); }
   cards.push({ id:uid(), added:Date.now(), status:'stock', name, lang:$('#mLang').value, set:$('#mSet').value.trim(),
     number:$('#mNum').value.trim(), condition:$('#mCond').value, image:manualImg, market:num($('#mMarket').value) || null, cmUrl:manualCmUrl,
-    buy:num($('#mBuy').value), sell:num($('#mSell').value), notes:$('#mNotes').value.trim() });
+    buy:num($('#mBuy').value), sell:num($('#mSell').value), notes:$('#mNotes').value.trim(),
+    graded:$('#mGraded').checked, grade:$('#mGraded').checked ? $('#mGrade').value.trim() : '' });
   refresh();
   resetManual();
   $('#mLang').value = 'es'; $('#mCond').value = 'Near Mint';
