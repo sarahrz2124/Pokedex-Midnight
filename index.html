@@ -394,7 +394,7 @@ label .field{font-family:var(--font-main);text-transform:none;letter-spacing:0;f
       <button class="btn" id="cmBtn">Añadir desde enlace</button>
       <a class="btn ghost" id="cmOpen" href="https://www.cardmarket.com/es/Pokemon" target="_blank" rel="noopener">Abrir Cardmarket ↗</a>
     </div>
-    <p class="hint">Busca por nombre, por número (4 o 4/102) o por las dos cosas (Charizard 4). Escribe el nombre en el idioma elegido (en japonés, por ejemplo, リザードン para Charizard). También puedes copiar el enlace de una carta de Cardmarket o de Serebii y pegarlo aquí. Datos de TCGdex; los precios son la media de Cardmarket cuando están disponibles.</p>
+    <p class="hint">Busca por nombre, por número (4 o 4/102) o por las dos cosas (Charizard 4). Escribe el nombre en el idioma elegido (en japonés, por ejemplo, リザードン para Charizard). También puedes copiar el enlace de una carta de Cardmarket o de Serebii y pegarlo aquí. Si una carta no tiene foto, se busca sola en Serebii por colección y número. Datos de TCGdex; los precios son la media de Cardmarket cuando están disponibles.</p>
     <div class="grid" id="results"></div>
     <div class="status-msg" id="sStatus">Busca una carta para ver resultados ✨</div>
   </section>
@@ -514,6 +514,49 @@ function parseSerebii(u){
   return { set: m[1], number: m[2], image: `https://www.serebii.net/card/${m[1]}/${m[2]}.jpg` };
 }
 const normImg = u => { const s = parseSerebii(u); return s ? s.image : u; };
+
+/* ===== Foto automática desde Serebii =====
+   Si una carta no tiene foto pero sí colección y número, prueba la imagen de Serebii:
+   "Pokémon VS" + 63 → serebii.net/card/vs/63.jpg (y la versión japonesa "-jp" si existe) */
+function serebiiSlugs(set){
+  const base = String(set || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/pok[eé]mon|tcg|set\b|expansion|expansi[oó]n/g, '').replace(/&/g, '').replace(/[^a-z0-9]/g, '');
+  if (!base) return [];
+  return base.endsWith('jp') ? [base, base.replace(/jp$/, '-jp')] : [base, base + '-jp'];
+}
+function imageExists(url, ms = 7000){
+  return new Promise(res => {
+    const i = new Image(); const t = setTimeout(() => { i.src = ''; res(false); }, ms);
+    i.onload = () => { clearTimeout(t); res(i.naturalWidth > 20); };
+    i.onerror = () => { clearTimeout(t); res(false); };
+    i.src = url;
+  });
+}
+async function findSerebiiImage(set, number, lang){
+  const n = parseInt(String(number || '').split('/')[0].replace(/\D/g, ''), 10);
+  if (!n) return null;
+  let slugs = serebiiSlugs(set);
+  if (lang === 'ja') slugs = slugs.reverse(); // las japonesas primero en su versión -jp
+  for (const slug of slugs) {
+    const url = `https://www.serebii.net/card/${slug}/${n}.jpg`;
+    if (await imageExists(url)) return url;
+  }
+  return null;
+}
+/* Completa en segundo plano las fotos que faltan en el inventario */
+let photoFilling = false;
+async function fillPhotos(){
+  if (photoFilling) return; photoFilling = true;
+  let changed = false;
+  for (const c of cards) {
+    if (c.image || c.sbTried || !c.set || !c.number) continue;
+    const url = await findSerebiiImage(c.set, c.number, c.lang);
+    c.sbTried = true; changed = true;
+    if (url) { c.image = url; const ph = document.querySelector(`.card[data-id="${c.id}"] .holo .ph`); if (ph) ph.outerHTML = `<img src="${esc(url)}" alt="${esc(c.name)}">`; }
+  }
+  photoFilling = false;
+  if (changed) save();
+}
 /* Número de Pokédex a partir del nombre (para el enlace de Serebii) */
 const dexCache = {};
 async function dexFromName(name){
@@ -707,7 +750,7 @@ function renderStats(){
 /* ===== Inventario ===== */
 function cardHTML(c){
   const sold = c.status === 'sold';
-  const img = c.image ? `<img src="${esc(c.image)}" alt="${esc(c.name)}" loading="lazy">` : `<div class="ph">${esc(c.name)}</div>`;
+  const img = c.image ? `<img src="${esc(c.image)}" alt="${esc(c.name)}" loading="lazy" onerror="this.outerHTML='<div class=&quot;ph&quot;>Foto no disponible</div>'">` : `<div class="ph">${esc(c.name)}</div>`;
   const meta = [c.set, c.number && '#' + c.number, c.condition].filter(Boolean).map(esc).join(' · ');
   return `<article class="card ${sold?'is-sold':''}" data-id="${c.id}">
     <div class="holo">${img}
@@ -762,6 +805,7 @@ function renderInventory(){
   else if (!cards.length) e.innerHTML = '<b>Aún no hay cartas por aquí</b>Ve a <i>Buscar cartas</i> o <i>Añadir a mano</i> para empezar tu colección.';
   renderStats();
   setTimeout(fillDex, 500);
+  setTimeout(fillPhotos, 800);
 }
 function refresh(){ save(); renderInventory(); }
 
@@ -1028,6 +1072,7 @@ async function addFromCardmarket(){
       $('#mNum').value = info.num != null ? String(info.num) : '';
       if (LANGS[lang]) $('#mLang').value = lang;
       manualCmUrl = info.url;
+      manualAutoPhoto();
       $('#mBuy').focus();
       toast('No la he encontrado en la base de datos: te he rellenado el formulario para añadirla a mano.');
     }
@@ -1099,6 +1144,14 @@ async function addFromSearch(d){
   wireGraded(m, 'a');
   let chosenImg = imgLarge(d) || '';
   wirePhoto(m, 'a', src => { chosenImg = src; m.querySelector('#aPrev').innerHTML = previewHTML(src); });
+  if (!chosenImg && setName && number) {
+    m.querySelector('#aPrev').innerHTML = 'Buscando foto en Serebii…';
+    findSerebiiImage(setName, number, d.cardLang || d.lang).then(url => {
+      if (!m.isConnected || chosenImg) return;
+      if (url) { chosenImg = url; m.querySelector('#aPrev').innerHTML = previewHTML(url); toast('Foto encontrada en Serebii'); }
+      else m.querySelector('#aPrev').innerHTML = previewHTML('');
+    });
+  }
   m.querySelector('#xNo').onclick = closeModal;
   m.querySelector('#xOk').onclick = () => {
     const v = id => m.querySelector(id).value;
@@ -1130,6 +1183,14 @@ async function setPhoto(file){
 }
 $('#mPhoto').onchange = e => setPhoto(e.target.files[0]);
 function showPhoto(src){ drop.querySelector('img')?.remove(); if (!src) return; const i = document.createElement('img'); i.src = src; i.onerror = () => { i.remove(); toast('No se ha podido cargar esa imagen. Prueba a copiar la imagen y pegarla con Ctrl+V.', true); }; drop.appendChild(i); }
+async function manualAutoPhoto(){
+  if (manualImg || !$('#mSet').value.trim() || !$('#mNum').value.trim()) return;
+  const set = $('#mSet').value, num = $('#mNum').value;
+  const url = await findSerebiiImage(set, num, $('#mLang').value);
+  if (url && !manualImg && $('#mSet').value === set && $('#mNum').value === num) { manualImg = url; showPhoto(url); $('#mImgUrl').value = url; toast('Foto encontrada en Serebii'); }
+}
+$('#mSet').addEventListener('change', manualAutoPhoto);
+$('#mNum').addEventListener('change', manualAutoPhoto);
 $('#mImgUrl').addEventListener('input', () => {
   const u = $('#mImgUrl').value.trim(); if (!/^https?:\/\//.test(u)) return;
   const sb = parseSerebii(u);
