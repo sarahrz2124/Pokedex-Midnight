@@ -256,7 +256,8 @@ a.icon-btn{font-size:11px;padding:6px 4px}
 .profit{flex-wrap:wrap;gap:2px 8px}
 .toolbar > *{min-width:0}
 .toolbar select.field{flex:1 1 140px}
-.chips{flex:1 1 200px}
+.chips{flex:0 1 auto}
+.toolbar .grow{flex:1 1 240px}
 .chip{flex:1;justify-content:center}
 .modal{padding:clamp(18px,4vw,26px)}
 .modal .row > div{min-width:0}
@@ -279,6 +280,7 @@ a.icon-btn{font-size:11px;padding:6px 4px}
 @media (max-width:620px){
   .graded-block{grid-template-columns:1fr}
   .toolbar .grow{flex-basis:100%}
+  .chips{flex:1 1 100%}
 }
 @media (max-width:380px){
   .grid{grid-template-columns:1fr 1fr;gap:10px}
@@ -388,11 +390,11 @@ label .field{font-family:var(--font-main);text-transform:none;letter-spacing:0;f
       </button>
     </div>
     <div class="search-box">
-      <input class="field" id="cmUrl" placeholder="…o pega aquí el enlace de una carta de Cardmarket" style="flex:1;min-width:200px">
+      <input class="field" id="cmUrl" placeholder="…o pega aquí el enlace de una carta de Cardmarket o Serebii" style="flex:1;min-width:200px">
       <button class="btn" id="cmBtn">Añadir desde enlace</button>
       <a class="btn ghost" id="cmOpen" href="https://www.cardmarket.com/es/Pokemon" target="_blank" rel="noopener">Abrir Cardmarket ↗</a>
     </div>
-    <p class="hint">Busca por nombre, por número (4 o 4/102) o por las dos cosas (Charizard 4). Escribe el nombre en el idioma elegido (en japonés, por ejemplo, リザードン para Charizard). También puedes buscarla en Cardmarket, copiar el enlace de la carta y pegarlo aquí. Datos de TCGdex; los precios son la media de Cardmarket cuando están disponibles.</p>
+    <p class="hint">Busca por nombre, por número (4 o 4/102) o por las dos cosas (Charizard 4). Escribe el nombre en el idioma elegido (en japonés, por ejemplo, リザードン para Charizard). También puedes copiar el enlace de una carta de Cardmarket o de Serebii y pegarlo aquí. Datos de TCGdex; los precios son la media de Cardmarket cuando están disponibles.</p>
     <div class="grid" id="results"></div>
     <div class="status-msg" id="sStatus">Busca una carta para ver resultados ✨</div>
   </section>
@@ -417,7 +419,7 @@ label .field{font-family:var(--font-main);text-transform:none;letter-spacing:0;f
         <label>Precio de compra (€) · 75 %<input class="field" id="mBuy" inputmode="decimal" placeholder="0,00"></label>
         <label>Precio de venta (€)<input class="field" id="mSell" inputmode="decimal" placeholder="0,00"></label>
         <label class="check"><input type="checkbox" id="mChk" checked><span>35 %</span></label>
-        <label class="full">Enlace de la foto (opcional)<input class="field" id="mImgUrl" placeholder="En Cardmarket: clic derecho en la foto → Copiar dirección de imagen"></label>
+        <label class="full">Enlace de la foto (opcional)<input class="field" id="mImgUrl" placeholder="Enlace de la imagen, o de la carta en Serebii"></label>
         <label class="full">Notas<textarea class="field" id="mNotes" rows="2" placeholder="A quién se la compré, dónde la tengo guardada…"></textarea></label>
         <div class="full" style="display:flex;justify-content:flex-end;gap:10px">
           <button type="button" class="btn ghost" id="mReset">Limpiar</button>
@@ -502,6 +504,43 @@ function linkPricing(mk, buy, sell, chk){
   chk.addEventListener('change', update);
   return update;
 }
+/* ===== Serebii (Cardex): todas las cartas de cada Pokémon, japonesas e inglesas ===== */
+const SEREBII = 'https://www.serebii.net/card/dex/';
+const serebiiLink = c => c.dex ? `${SEREBII}${String(c.dex).padStart(3, '0')}.shtml` : SEREBII;
+/* Página de carta de Serebii → su imagen: /card/neodiscovery/032.shtml → /card/neodiscovery/32.jpg */
+function parseSerebii(u){
+  const m = String(u || '').trim().match(/^https?:\/\/(?:www\.)?serebii\.net\/card\/([a-z0-9-]+)\/0*(\d+[a-z]?)\.(?:shtml|jpg|png)/i);
+  if (!m || m[1] === 'dex') return null;
+  return { set: m[1], number: m[2], image: `https://www.serebii.net/card/${m[1]}/${m[2]}.jpg` };
+}
+const normImg = u => { const s = parseSerebii(u); return s ? s.image : u; };
+/* Número de Pokédex a partir del nombre (para el enlace de Serebii) */
+const dexCache = {};
+async function dexFromName(name){
+  const words = String(name || '').replace(SUFFIXES, '').toLowerCase().replace(/[.'’]/g, '').split(/\s+/).filter(Boolean);
+  if (!words.length || !/^[a-z0-9-]+$/.test(words.join(''))) return null;
+  for (const slug of [...new Set([words.join('-'), words[words.length - 1], words[0]])]) {
+    if (slug in dexCache) { if (dexCache[slug]) return dexCache[slug]; continue; }
+    try { const r = await fetch(`https://pokeapi.co/api/v2/pokemon-species/${encodeURIComponent(slug)}`); dexCache[slug] = r.ok ? (await r.json()).id : 0; }
+    catch(e) { dexCache[slug] = 0; }
+    if (dexCache[slug]) return dexCache[slug];
+  }
+  return null;
+}
+/* Completa en segundo plano el número de Pokédex de las cartas que no lo tienen */
+let dexFilling = false;
+async function fillDex(){
+  if (dexFilling) return; dexFilling = true;
+  let changed = false;
+  for (const c of cards) {
+    if (c.dex !== undefined) continue;
+    c.dex = (await dexFromName(c.name)) || 0; changed = true;
+    const a = document.querySelector(`.card[data-id="${c.id}"] a.serebii`); if (a) a.href = serebiiLink(c);
+  }
+  dexFilling = false;
+  if (changed) save();
+}
+
 /* Alt: busca por nombre + número y, si es graded, filtra por empresa y nota (p. ej. PSA 10 → gradeKey=PSA-10) */
 function altLink(c){
   const params = new URLSearchParams();
@@ -596,7 +635,7 @@ function wirePhoto(m, p, setImg){
   const fromFile = async f => { if (!f || !f.type.startsWith('image/')) return; try { setImg(await resizeImage(f)); url.value = ''; toast('Foto añadida'); } catch(e) { toast('No se ha podido leer la imagen', true); } };
   m.querySelector('#' + p + 'ImgBtn').onclick = () => file.click();
   file.onchange = () => fromFile(file.files[0]);
-  url.addEventListener('input', () => { const u = url.value.trim(); if (/^https?:\/\//.test(u)) setImg(u); });
+  url.addEventListener('input', () => { const u = url.value.trim(); if (/^https?:\/\//.test(u)) setImg(normImg(u)); });
   modalPhoto = fromFile;
 }
 function previewHTML(src){ return src ? `<img src="${esc(src)}" alt="">` : 'Sin foto<br>Añádela abajo'; }
@@ -695,6 +734,7 @@ function cardHTML(c){
         <a class="icon-btn" href="${cmLink(c)}" target="_blank" rel="noopener">Cardmarket</a>
         <a class="icon-btn" href="${ebayLink(c)}" target="_blank" rel="noopener">eBay</a>
         <a class="icon-btn alt" href="${esc(altLink(c))}" target="_blank" rel="noopener" title="Ver ofertas de esta carta en Alt">Alt</a>
+        <a class="icon-btn serebii" href="${esc(serebiiLink(c))}" target="_blank" rel="noopener" title="Todas las cartas de este Pokémon en Serebii (japonesas e inglesas)">Serebii</a>
       </div>
     </div>
   </article>`;
@@ -721,6 +761,7 @@ function renderInventory(){
   if (!list.length && cards.length) e.innerHTML = (!$('#fRaw').checked && !$('#fGraded').checked) ? '<b>Marca Raw, Graded o las dos</b>Con las dos casillas desmarcadas no se muestra ninguna carta.' : '<b>Sin resultados</b>Ninguna carta coincide con los filtros.';
   else if (!cards.length) e.innerHTML = '<b>Aún no hay cartas por aquí</b>Ve a <i>Buscar cartas</i> o <i>Añadir a mano</i> para empezar tu colección.';
   renderStats();
+  setTimeout(fillDex, 500);
 }
 function refresh(){ save(); renderInventory(); }
 
@@ -952,8 +993,18 @@ function parseCardmarket(link){
 }
 
 async function addFromCardmarket(){
+  const sb = parseSerebii($('#cmUrl').value);
+  if (sb) {
+    document.querySelector('.tab[data-tab="manual"]').click();
+    resetManual();
+    $('#mSet').value = sb.set; $('#mNum').value = sb.number; $('#mImgUrl').value = sb.image;
+    manualImg = sb.image; showPhoto(sb.image);
+    $('#mName').focus();
+    toast('He puesto la foto, la colección y el número de Serebii. Escribe el nombre y el precio.');
+    return;
+  }
   const info = parseCardmarket($('#cmUrl').value);
-  if (!info || !info.name) return toast('Ese enlace no parece de una carta de Cardmarket. Abre la carta y copia la dirección de arriba.', true);
+  if (!info || !info.name) return toast('Ese enlace no parece de una carta de Cardmarket ni de Serebii. Abre la carta y copia la dirección de arriba.', true);
   const lang = info.lang || $('#sLang').value;
   $('#sQuery').value = info.num != null ? `${info.name} ${info.num}` : info.name;
   await doSearch({
@@ -1005,6 +1056,8 @@ async function addFromSearch(d){
     if (r.ok) det = await r.json();
   } catch(e) {}
   if (d.src === 'ptcg') det = { rarity: d.rarity };
+  let dex = Array.isArray(det.dexId) && det.dexId[0] ? det.dexId[0] : null;
+  if (!dex) dex = await dexFromName(d.name).catch(() => null);
   const cm = det.pricing && det.pricing.cardmarket;
   const market = d.src === 'ptcg' ? d.market : (cm ? (cm.trend ?? cm.avg ?? cm.avg30 ?? null) : null);
   const setName = d.setName || (det.set && det.set.name) || '';
@@ -1026,6 +1079,7 @@ async function addFromSearch(d){
             <a class="pill" href="${cmLink(preview)}" target="_blank" rel="noopener">Ver en Cardmarket ↗</a>
             <a class="pill" href="${ebayLink(preview)}" target="_blank" rel="noopener">Ver en eBay ↗</a>
             <a class="pill" href="${esc(altLink({ name:d.name, number }))}" target="_blank" rel="noopener">Ver en Alt ↗</a>
+            <a class="pill" href="${esc(serebiiLink({ dex }))}" target="_blank" rel="noopener">Ver en Serebii ↗</a>
           </div>
         </div>
       </div>
@@ -1050,7 +1104,7 @@ async function addFromSearch(d){
     const v = id => m.querySelector(id).value;
     cards.push({ id:uid(), added:Date.now(), status:'stock', name:d.name, lang:v('#aLang'), set:setName, number,
       condition:v('#aCond'), image: chosenImg, market: num(v('#aMarket')) || market, cmUrl: d.cmUrl || '',
-      graded: m.querySelector('#aGraded').checked, grade: readGrade(m, 'a'),
+      graded: m.querySelector('#aGraded').checked, grade: readGrade(m, 'a'), dex: dex || 0,
       buy:num(v('#aBuy')), sell:num(v('#aSell')), notes:v('#aNotes').trim() });
     closeModal(); refresh(); toast(`${d.name} añadida al inventario ✨`);
   };
@@ -1076,7 +1130,12 @@ async function setPhoto(file){
 }
 $('#mPhoto').onchange = e => setPhoto(e.target.files[0]);
 function showPhoto(src){ drop.querySelector('img')?.remove(); if (!src) return; const i = document.createElement('img'); i.src = src; i.onerror = () => { i.remove(); toast('No se ha podido cargar esa imagen. Prueba a copiar la imagen y pegarla con Ctrl+V.', true); }; drop.appendChild(i); }
-$('#mImgUrl').addEventListener('input', () => { const u = $('#mImgUrl').value.trim(); if (/^https?:\/\//.test(u)) { manualImg = u; showPhoto(u); } });
+$('#mImgUrl').addEventListener('input', () => {
+  const u = $('#mImgUrl').value.trim(); if (!/^https?:\/\//.test(u)) return;
+  const sb = parseSerebii(u);
+  if (sb) { if (!$('#mSet').value) $('#mSet').value = sb.set; if (!$('#mNum').value) $('#mNum').value = sb.number; }
+  manualImg = normImg(u); showPhoto(manualImg);
+});
 /* Pegar una imagen copiada (Ctrl+V) mientras estás en "Añadir a mano" */
 document.addEventListener('paste', e => {
   const item = [...(e.clipboardData?.items || [])].find(it => it.type.startsWith('image/'));
